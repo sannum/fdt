@@ -1,0 +1,8 @@
+[package]
+name = "flat_device_tree"
+version = "0.1.0"
+authors = ["Viktor Sannum <sannum.viktor@gmail.com>"]
+
+[dependencies]
+byteorder = { version = "1", default-features = false }
+memchr = { version = "1.0", default-features = false }
