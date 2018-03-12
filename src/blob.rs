@@ -68,3 +68,13 @@ impl<'buf> Blob<'buf> {
 pub fn align(offset: usize, align: usize) -> usize {
 	(offset + (align - 1)) & !(align - 1)
 }
+
+
+#[cfg(tests)]
+mod tests {
+	#[test]
+	fn test0() {
+		println!("test");
+		assert_eq!(2 + 2, 4);
+	}
+}

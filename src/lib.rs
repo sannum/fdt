@@ -131,3 +131,12 @@ impl<'buf> FDT<'buf> {
 		None
 	}
 }
+
+#[cfg(tests)]
+mod tests {
+	#[test]
+	fn test0() {
+		println!("test");
+		assert_eq!(2 + 2, 4);
+	}
+}
