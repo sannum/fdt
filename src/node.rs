@@ -1,32 +1,23 @@
 use core::str;
 use memchr::memchr;
 use byteorder::{ByteOrder, BigEndian};
-use property::{Property, Properties};
+use property::{Property, Properties, PropertyIterator};
 
 use blob::Blob;
 use blob::align;
 
 use core::fmt;
 
-pub use filters::Name;
-pub use filters::WithName as props_WithName;
-
 pub struct Node<'buf> {
 	blob: &'buf Blob<'buf>,
-	offs: usize,
+	//offs: usize,
 	name: &'buf str,
 	props: usize,
 	end: usize,
 	depth: usize,
 }
-/*
-impl<'buf> Name for Node<'buf> {
-	fn name(&self) -> &str {
-		self.name()
-	}
-}*/
 
-impl<'buf> Node<'buf> {	
+impl<'buf> Node<'buf> {
 	pub fn name(&self) -> &str {
 		self.name
 	}
@@ -101,7 +92,7 @@ impl<'buf> Node<'buf> {
 	/// # Examples
 	///
 	/// todo: get a property from a node
-	fn property(&self, name: &str) -> Option<Property> {
+	pub fn property(&self, name: &str) -> Option<Property> {
 		self.properties().with_name(name).next()
 	}
 	/// Returns the phandle of the node.
@@ -111,8 +102,8 @@ impl<'buf> Node<'buf> {
 	/// # Examples
 	///
 	/// todo: get a the phandle from a node and find the node using the phandle
-	fn phandle(&self) -> Option<u32> {
-		self.property("phandle").and_then(|prop| prop.as_u32().ok())
+	pub fn phandle(&self) -> Option<u32> {
+		self.property("phandle").and_then(|val| val.as_u32().ok())
 	}
 	
 	/// Tests if [compatible] is contained in the nodes [compatible] property.
@@ -184,16 +175,16 @@ impl<'buf> Node<'buf> {
 	/// # Examples
 	///
 	/// todo: return a supernode at depth 2
-	fn supernode_at_depth(&self, depth: usize) -> Option<Node<'buf>> {
+	pub fn supernode_at_depth(&self, depth: usize) -> Option<Node<'buf>> {
 		None
 	}
 }
 
 impl<'buf> fmt::Display for Node<'buf> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		writeln!(f, "{:i$}{} {{", "", self.name(), i=self.depth * 2);
+		writeln!(f, "{:i$}{} {{", "", self.name(), i=self.depth * 2)?;
 		for prop in self.properties() {
-			writeln!(f, "{:i$}  {}", "", prop, i=self.depth * 2);
+			writeln!(f, "{:i$}  {}", "", prop, i=self.depth * 2)?;
 		}
 		writeln!(f, "{:i$}}}", "", i=self.depth * 2)
 	}
@@ -228,7 +219,7 @@ impl<'buf> Iterator for Nodes<'buf> {
 	type Item = Node<'buf>;
 	
 	fn next(&mut self) -> Option<Self::Item> {
-		let s = self.offs;
+		//let s = self.offs;
 		let d = self.blob.nodes();
 		let mut o = self.offs;
 		let name;
@@ -282,18 +273,12 @@ impl<'buf> Iterator for Nodes<'buf> {
 		self.offs = o;
 		Some(Node {
 			blob: &self.blob,
-			offs: s,
+			//offs: s,
 			name: name,
 			props: props,
 			end: o,
 			depth: self.depth - 1,
 		})
-	}
-}
-
-impl<'buf> fmt::Display for Nodes<'buf> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		Ok(())
 	}
 }
 
@@ -371,7 +356,7 @@ impl<'str, 'buf, I: Iterator<Item=Node<'buf>>> Iterator for
 	}
 }
 
-pub trait Filters<'arg, 'buf>: Iterator<Item=Node<'buf>> {
+pub trait NodeIterator<'arg, 'buf>: Iterator<Item=Node<'buf>> {
 	/// Filters on nodes with name [name]
 	///
 	/// Consumes the iterator and returns a NodeIterator which iterates over 
@@ -426,7 +411,7 @@ pub trait Filters<'arg, 'buf>: Iterator<Item=Node<'buf>> {
 
 }
 
-impl<'name, 'buf, I> Filters<'name, 'buf> for I where I: Iterator<Item=Node<'buf>> {}
+impl<'name, 'buf, I> NodeIterator<'name, 'buf> for I where I: Iterator<Item=Node<'buf>> {}
 
 
 
@@ -449,22 +434,22 @@ impl<'buf> fmt::Display for Subnodes<'buf> {
 		fn fmt_node(node: &Node, f: &mut fmt::Formatter, i: usize) -> 
 				Result<(), fmt::Error> 
 		{
-			writeln!(f, "{:i$}{} {{", "  ", node.name(), i = i);
+			writeln!(f, "{:i$}{} {{", "  ", node.name(), i = i)?;
 			for prop in node.properties() {
-				write!(f, "{:i$}", "    ", i = i + 1);
+				write!(f, "{:i$}", "    ", i = i + 1)?;
 				// Some special nodes have properties of special types
 				match node.name() { 
 					"aliases" | "__symbols__" => writeln!(f, 
 						"{}: {}", prop.name(), prop.as_str()
-					),
+					)?,
 					"__overrides__" => {
 						let phandle = BigEndian::read_u32(prop.raw());
 						let strlen = memchr(b'\0', &prop.raw()[4..]).unwrap();
 						let string = str::from_utf8(&prop.raw()[4..4 + strlen]).unwrap();
 						let rem = prop.raw().len() - (4 + strlen);
-						writeln!(f, "{}: [{}] {:?} {}", prop.name(), phandle, string, rem)
+						writeln!(f, "{}: [{}] {:?} {}", prop.name(), phandle, string, rem)?
 					},
-					_ => writeln!(f, "{}", prop),
+					_ => writeln!(f, "{}", prop)?,
 				};
 			}
 			Ok(())
@@ -474,14 +459,13 @@ impl<'buf> fmt::Display for Subnodes<'buf> {
 		let mut depth = min_depth;
 		let nodes = self.clone();
 		for node in nodes {
-			fmt_node(&node, f, node.depth - min_depth);
+			fmt_node(&node, f, node.depth - min_depth)?;
 			depth += 1;
 			if node.depth - min_depth <= depth {
 				depth -= 1;
-				writeln!(f, "{:i$}}}", "  ", i = depth);
+				writeln!(f, "{:i$}}}", "  ", i = depth)?;
 			}
 		}
-		writeln!(f, "}}");
-		Ok(())
+		writeln!(f, "}}")
 	}
 }

@@ -1,5 +1,4 @@
 #![no_std]
-//#![feature(conservative_impl_trait)]
 
 extern crate byteorder;
 extern crate memchr;
@@ -16,7 +15,7 @@ const FDT_END: u32			= 0x00000009;
 //pub mod error;
 pub mod filters;
 //pub use filters::*;
-pub use node::Filters;
+pub use node::NodeIterator;
 
 mod header;
 mod blob;
@@ -46,7 +45,7 @@ impl<'buf> FDT<'buf> {
 	///
 	/// This method is unsafe since we will dereference a raw pointer and act
 	/// on the data pointed to. The data must be a valid flat device tree and
-	/// no other mutable references to this data should exist.
+	/// no other references to this data must exist.
 	/// 
 	/// # Errors
 	///
@@ -127,7 +126,7 @@ impl<'buf> FDT<'buf> {
 	/// # Examples
 	///
 	/// todo: Find an aliased node path
-	fn path_from_alias(&self, alias: &str) -> Option<&'buf str> {
+	pub fn path_from_alias(&self, alias: &str) -> Option<&'buf str> {
 		None
 	}
 }

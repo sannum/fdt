@@ -93,7 +93,7 @@ impl Magic {
 	pub fn valid(&self) -> Result<(), ()> { // Error> {
 		match self.val {
 			MAGIC => Ok(()),
-			other => panic!("Bad magic number in fdt"), //Error::BadMagic(other),
+			other => panic!("Bad magic number in fdt: {}", other), //Error::BadMagic(other),
 		}
 	}
 }
@@ -106,7 +106,7 @@ impl Version {
 	pub fn compatible(&self) -> Result<(), ()> { // Error> {
 		match self.val {
 			MIN_COMPAT_VERSION ... MAX_COMPAT_VERSION => Ok(()),
-			other => panic!("Incompatible fdt version {}", self.val), //Error::BadVersion(other),
+			other => panic!("Incompatible fdt version {}", other), //Error::BadVersion(other),
 		}
 	}
 }

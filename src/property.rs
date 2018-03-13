@@ -4,12 +4,10 @@ use blob::Blob;
 use blob::align;
 
 use core::mem::size_of;
-use core::cmp::Eq;
 
 use core::fmt;
 use core::str;
 
-use ::filters::Name;
 use ::stringlist::StringList;
 
 pub struct Property<'a> {
@@ -42,43 +40,6 @@ impl<'a> Property<'a> {
 		StringList::from_utf8(self.value).unwrap()
 	}
 }
-
-impl<'a> Name for Property<'a> {
-	fn name(&self) -> &str {
-		self.name
-	}
-}
-
-impl<'a> fmt::Display for Property<'a> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		write!(f, "{}: ", self.name());
-		match self.name() {
-			"compatible" 	=> write!(f, "{}", self.as_stringlist()), //todo: stringlist
-			"model" 		=> write!(f, "{}", self.as_str()),
-			"phandle" 		=> write!(f, "{}", self.as_u32().unwrap()),
-			"status" 		=> write!(f, "{}", self.as_str()),
-			"#address-cells" => write!(f, "{}", self.as_u32().unwrap()),
-			"#size-cells" 	=> write!(f, "{}", self.as_u32().unwrap()),
-			"reg" 			=> write!(f, "{:?}", self.value), // todo: prop_enc_array
-			"virtual-reg" 	=> write!(f, "{}", self.as_u32().unwrap()),
-			"ranges" 		=> write!(f, "[{} bytes]", self.value.len()), // todo: prop_enc_array
-			"dma-ranges"	=> write!(f, "[{} bytes]", self.value.len()), // todo: prop_enc_array
-			"name"			=> write!(f, "{}", self.as_str()),
-			"device_type"	=> write!(f, "{}", self.as_str()),
-			"interrupts"	=> write!(f, "{:?}", self.value),
-			"interrupt-parent" => write!(f, "{}", self.as_u32().unwrap()),
-			"interrupts-extended" => write!(f, "{:?}", self.value),
-			"#interrupt-cells" => write!(f, "{}", self.as_u32().unwrap()),
-			"interrupt-controller" => write!(f, "{:?}", self.value),
-			_ => write!(f, "{:?}", self.value),
-		}
-	}
-}
-/*
-pub struct PropertyIterator<'buf> {
-	blob: Blob<'buf>,
-	offs: usize,
-}*/
 
 pub struct Properties<'buf> {
 	blob: &'buf Blob<'buf>,
@@ -132,26 +93,65 @@ impl<'buf> Iterator for Properties<'buf> {
 	}
 }
 
-/*
-// let a: u32 = node.properties().with_name("a").into()
-// node.properties().with_name("a").has_value(a)
+#[derive(Clone, Debug)]
+pub struct WithName<'name, I> {
+	iter: I,
+	name: &'name str,
+}
 
-// Omitted, covered by iterator
-pub fn fdt_next_property_offset(...)
+impl<'name, 'buf, I: Iterator<Item=Property<'buf>>> Iterator for
+		WithName<'name, I>
+{
+	type Item = I::Item;
+	
+	fn next(&mut self) -> Option<Self::Item> {
+		let name = self.name;
+		self.iter.find(|property| property.name == name)
+	}
+}
 
-// Omitted, covered by iterator
-pub fn fdt_get_property_by_offset(..)
+pub trait PropertyIterator<'arg, 'buf>: Iterator<Item=Property<'buf>> {
+	/// Filters on properties with name [name]
+	///
+	/// Consumes the iterator and returns a PropertyIterator which iterates over 
+	/// nodes with names matching [path]
+	///
+	/// An address part (@xxx) can optionally be used to identify a unique node.
+	///
+	/// # Examples
+	///
+	/// todo: get some nodes using their names.
+	fn with_name(self, name: &'arg str) -> WithName<'arg, Self> 
+		where Self: Sized
+	{
+		WithName { iter: self, name: name}
+	}
+}
 
-// omitted, covered by fdt::Node::properties().with_name_starting()
-pub fn fdt_get_property_namelen(...)
+impl<'name, 'buf, I> PropertyIterator<'name, 'buf> for I where I: Iterator<Item=Property<'buf>> {}
 
-// omitted, covered by fdt::Node::properties().with_name
-pub fn fdt_get_property(...)
-
-// omitted, covered by fdt::Property::value()
-pub fn fdt_getprop_by_offset(...)
-
-// omitted, covered by fdt::Node::properties().with_name_starting().value
-pub fn fdt_getprop_namelen(...)
-pub fn fdt_getprop(...)
-*/
+impl<'a> fmt::Display for Property<'a> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		write!(f, "{}: ", self.name())?;
+		match self.name() {
+			"compatible" 	=> write!(f, "{}", self.as_stringlist()), //todo: stringlist
+			"model" 		=> write!(f, "{}", self.as_str()),
+			"phandle" 		=> write!(f, "{}", self.as_u32().unwrap()),
+			"status" 		=> write!(f, "{}", self.as_str()),
+			"#address-cells" => write!(f, "{}", self.as_u32().unwrap()),
+			"#size-cells" 	=> write!(f, "{}", self.as_u32().unwrap()),
+			"reg" 			=> write!(f, "{:?}", self.value), // todo: prop_enc_array
+			"virtual-reg" 	=> write!(f, "{}", self.as_u32().unwrap()),
+			"ranges" 		=> write!(f, "[{} bytes]", self.value.len()), // todo: prop_enc_array
+			"dma-ranges"	=> write!(f, "[{} bytes]", self.value.len()), // todo: prop_enc_array
+			"name"			=> write!(f, "{}", self.as_str()),
+			"device_type"	=> write!(f, "{}", self.as_str()),
+			"interrupts"	=> write!(f, "{:?}", self.value),
+			"interrupt-parent" => write!(f, "{}", self.as_u32().unwrap()),
+			"interrupts-extended" => write!(f, "{:?}", self.value),
+			"#interrupt-cells" => write!(f, "{}", self.as_u32().unwrap()),
+			"interrupt-controller" => write!(f, "{:?}", self.value),
+			_ => write!(f, "{:?}", self.value),
+		}
+	}
+}

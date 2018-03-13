@@ -1,8 +1,6 @@
 use core::str;
 use core::fmt;
 
-use memchr::memchr;
-
 #[derive(Debug)]
 pub struct StringList<'a> {
 	raw: &'a str,
@@ -27,13 +25,13 @@ impl<'a> StringList<'a> {
 
 impl<'a> fmt::Display for StringList<'a> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		write!(f, "[");
+		write!(f, "[")?;
 		let mut strings = self.strings();
 		for string in strings.nth(0) {
-			write!(f, "\"{}\"", string);
+			write!(f, "\"{}\"", string)?;
 		}
 		for string in strings {
-			write!(f, ", \"{}\"", string);
+			write!(f, ", \"{}\"", string)?;
 		}
 		write!(f, "]")
 	}
