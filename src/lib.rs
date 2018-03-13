@@ -57,7 +57,23 @@ impl<'buf> FDT<'buf> {
 	///
 	/// # Examples
 	///
-	/// todo: instantiate a FDT from the second argument in a kernel_start?
+	/// ```
+	/// use fdt::FDT;
+	/// let dtb = include_bytes!("../tests/dt.dtb").as_ptr();
+	/// 
+	/// unsafe {
+	///     let fdt = FDT::from_raw(dtb);
+	///     assert!(fdt.is_ok());
+	/// }
+	/// ```
+	/// Using a badly formatted dtb file will cause panic:
+	/// ```should_panic
+	/// # use fdt::FDT;
+	/// let ptr = 0x1234 as *const u8;
+	/// unsafe {
+	///     let fdt = FDT::from_raw(ptr);
+	/// }
+	/// ```
 	pub unsafe fn from_raw(ptr: *const u8) -> Result<FDT<'buf>, ()> { // FDTError> {
 		Ok(FDT { blob: Blob::from_raw(ptr)? })
 	}
@@ -73,12 +89,37 @@ impl<'buf> FDT<'buf> {
 	
 	/// Returns the physical cpuid of the booting cpu. 
 	/// 
-	/// If the flat device tree version < 2 this method returns None.
+	/// If the cpuid isn't available (device tree is of a version < 2) None is returned;
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use fdt::FDT;
+	/// let dtb = include_bytes!("../tests/dt.dtb").as_ptr();
+	/// 
+	/// let fdt;
+	/// unsafe { fdt = FDT::from_raw(dtb).unwrap(); }
+	/// 
+	/// let boot_cpuid = fdt.boot_cpuid_phys();
+	/// ```
 	pub fn boot_cpuid_phys(&self) -> Option<u32> {
 		self.blob.header().boot_cpuid_phys()
 	}
 	
 	/// Returns the total size in bytes of the flat device tree blob.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use fdt::FDT;
+	/// let dtb = include_bytes!("../tests/dt.dtb").as_ptr();
+	/// 
+	/// let fdt;
+	/// unsafe { fdt = FDT::from_raw(dtb).unwrap(); }
+	/// 
+	/// let total_size = fdt.total_size();
+	/// // Allocate some memory
+	/// ```
 	pub fn total_size(&self) -> u32 {
 		self.blob.header().totalsize()
 	}
@@ -94,6 +135,21 @@ impl<'buf> FDT<'buf> {
 	/// Returns a [NodeIterator] of the nodes of the flat device tree.
 	///
 	/// The nodes are iterated over in a depth first order.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use fdt::FDT;
+	/// let dtb = include_bytes!("../tests/dt.dtb").as_ptr();
+	/// 
+	/// let fdt;
+	/// unsafe { fdt = FDT::from_raw(dtb).unwrap(); }
+	/// 
+	/// // Print all nodes
+	/// for node in fdt.nodes() {
+	///     println!("{}", node.name());
+	/// }
+	/// ```
 	pub fn nodes(&'buf self) -> Nodes<'buf> {
 		Nodes::from_blob(&self.blob)
 	}
@@ -128,14 +184,5 @@ impl<'buf> FDT<'buf> {
 	/// todo: Find an aliased node path
 	pub fn path_from_alias(&self, alias: &str) -> Option<&'buf str> {
 		None
-	}
-}
-
-#[cfg(tests)]
-mod tests {
-	#[test]
-	fn test0() {
-		println!("test");
-		assert_eq!(2 + 2, 4);
 	}
 }
