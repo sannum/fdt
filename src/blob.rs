@@ -15,6 +15,9 @@ use core::slice;
 
 use memchr::memchr;
 use core::str;
+use core::fmt;
+
+use byteorder::{ByteOrder, BE};
 
 #[derive(Debug)]
 pub struct Blob<'buf> {
@@ -32,26 +35,15 @@ impl<'buf> Blob<'buf> {
 	pub fn header(&self) -> Header {
 		Header::new(&self.raw[0..])
 	}
-		
-	// todo: fdt_move intentionally left out until explicitly requested or required
-
-	/// Retrieve a string from the strings block of a device tree
-	///
-	/// Retrieves the string starting at byte offset 'string_offset'
-	/// (native endian) of the strings block or Err(()) if 'string_offset'
-	/// is out of bounds.
-	///
-	/// # Excamples
-	/// todo:
-	pub fn string(&self, string_offset: usize) -> Result<&'buf str, ()> {
-		let o = string_offset + self.header().off_dt_strings() as usize;
-		let len = memchr(b'\0', &self.raw[o..]).unwrap();
-		Ok(str::from_utf8(&self.raw[o..o + len]).unwrap())
-	}
 	
-	pub fn nodes(&self) -> &'buf [u8] {
+	pub fn nodes(&self) -> StructReader<'buf> {
 		let o = self.header().off_dt_struct() as usize;
-		&self.raw[o..]
+		let s = self.header().off_dt_strings() as usize;
+		StructReader { 
+			d: &self.raw[o..],
+			s: &self.raw[s..],
+			o: 0,
+		}
 	}
 	
 	// max_phandle has been omitted for the time beeing, as it's use isn't 
@@ -65,6 +57,118 @@ impl<'buf> Blob<'buf> {
 	}
 }
 
-pub fn align(offset: usize, align: usize) -> usize {
-	(offset + (align - 1)) & !(align - 1)
+#[derive(Debug)]
+pub enum Token {
+	BeginNode,
+	EndNode,
+	Prop,
+	End,
+	Error(u32)
+}
+
+impl fmt::Display for Token {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		match self {
+			&Token::BeginNode => write!(f, "token FDT_BEGIN_NODE"),
+			&Token::EndNode => write!(f, "token FDT_END_NODE"),
+			&Token::Prop => write!(f, "token FDT_PROP"),
+			&Token::End => write!(f, "token FDT_END"),
+			&Token::Error(val) => write!(f, "{:x}", val),
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct StructReader<'blob> {
+	d: &'blob [u8],
+	s: &'blob [u8],
+	o: usize,
+}
+
+impl<'blob> StructReader<'blob> {
+	pub fn offs(&self) -> usize {
+		self.o
+	}
+
+	pub fn token(&mut self) -> Token {
+		loop {
+			match BE::read_u32(&self.d[self.o..]) {
+				::FDT_NOP => {
+					self.o += 4;
+				},
+				::FDT_BEGIN_NODE => {
+					self.o += 4;
+					return Token::BeginNode;
+				},
+				::FDT_END_NODE => {
+					self.o += 4;
+					return Token::EndNode;
+				},
+				::FDT_PROP => {
+					self.o += 4;
+					return Token::Prop;
+				}
+				::FDT_END => {
+					self.o += 4;
+					return Token::End;
+				},
+				other => {
+					self.o += 4;
+					return Token::Error(other);
+				},
+			}
+		}
+	}
+	
+	pub fn skip(&mut self, bytes: usize) -> &mut Self {
+		self.o += bytes;
+		self
+	}
+	
+	pub fn read_u32(&mut self) -> u32 {
+		let o = self.o;
+		self.o += 4;
+		BE::read_u32(&self.d[o..])
+	}
+	
+	pub fn align(&mut self, align: usize) -> &mut Self {
+		self.o = (self.o + (align - 1)) & !(align - 1);
+		self
+	}
+	
+	pub fn string(&mut self) -> &'blob str {
+		let d = &self.d[self.o..];
+		let len = memchr(b'\0', d).unwrap_or(d.len());
+		self.o += len + 1;
+		str::from_utf8(&d[..len]).unwrap()
+	}
+	
+	pub fn skip_props(&mut self) -> &mut Self {
+		loop {
+			match self.token() {
+				Token::Prop => {
+					let len = self.read_u32() as usize;
+					self.skip(4 + len);
+					self.align(4);
+				},
+				_ => break,
+			}
+		}
+		self.o -= 4;
+		self
+	}
+	
+	pub fn slice(&mut self) -> &'blob [u8] {
+		let d = &self.d[self.o ..];
+		let end = BE::read_u32(d) as usize + 4;
+		self.o += end;
+		&d[4 .. end]
+	}
+	
+	pub fn string_ref(&mut self) -> &'blob str {
+		let o = BE::read_u32(self.d) as usize;
+		let d = &self.s[o..];
+		let len = memchr(b'\0', d).unwrap_or(d.len());
+		str::from_utf8(&d[..len]).unwrap()
+	}
 }

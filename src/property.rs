@@ -1,7 +1,7 @@
 use byteorder::{ByteOrder, BE};
 
-use blob::Blob;
-use blob::align;
+use blob::Token;
+use blob::StructReader;
 
 use core::mem::size_of;
 
@@ -42,13 +42,12 @@ impl<'a> Property<'a> {
 }
 
 pub struct Properties<'buf> {
-	blob: &'buf Blob<'buf>,
-	offs: usize,
+	blob: StructReader<'buf>,
 }
 
 impl<'buf> Properties<'buf> {
-	pub fn new(blob: &'buf Blob<'buf>, offs: usize) -> Self {
-		Properties {blob: blob, offs: offs}
+	pub fn new(blob: StructReader<'buf>) -> Self {
+		Properties {blob: blob}
 	}
 }
 
@@ -56,39 +55,12 @@ impl<'buf> Iterator for Properties<'buf> {
 	type Item = Property<'buf>;
 	
 	fn next(&mut self) -> Option<Self::Item> {
-		let d = self.blob.nodes();
-		let mut o = self.offs;
-
-		let val;
-		let name_offs;
-		
-		loop {
-			match BE::read_u32(&d[o..]) {
-				::FDT_NOP => {
-					o += 4;
-				},
-				::FDT_PROP => {
-					o += 4;
-					let len = BE::read_u32(&d[o..]) as usize;
-					o += 4;
-					name_offs = BE::read_u32(&d[o..]) as usize;
-					o += 4;
-					val = &d[o..o + len];
-					o = align(o + len, 4);
-					break;
-				},
-				_ => return None
-			}
-		}
-		if let Ok(name) = self.blob.string(name_offs) {
-			let next = Property {
-				name : name,
-				value : val
-			};
-			self.offs = o;
-			return Some(next)
-		} else {
-			panic!("Parse error, property name at invalid string offset {}", name_offs);
+		match self.blob.token() {
+			Token::Prop => Some(Property {
+				name: self.blob.string_ref(),
+				value: self.blob.slice(),
+			}),
+			_ => None,
 		}
 	}
 }

@@ -24,7 +24,7 @@ mod node;
 mod stringlist;
 
 use blob::Blob;
-use node::{Nodes};
+use node::{Node, Nodes};
 
 /// An interface for parsing flat device trees from an in memory buffer.
 ///
@@ -151,7 +151,7 @@ impl<'buf> FDT<'buf> {
 	/// }
 	/// ```
 	pub fn nodes(&'buf self) -> Nodes<'buf> {
-		Nodes::from_blob(&self.blob)
+		Nodes::new(self.blob.nodes(), 0)
 	}
 	
 // Utility methods
@@ -164,7 +164,9 @@ impl<'buf> FDT<'buf> {
 	/// # Examples
 	///
 	/// todo: Find a interrupt parent based on phandle
-	//fn node_phandle(&self, phandle: u32) -> Option<Node<'buf>> {}
+	fn phandle(&'buf self, phandle: u32) -> Option<Node<'buf>> {
+		self.nodes().with_phandle(phandle)
+	}
 	
 	/// Takes an alias and returns the corresponding device [Node]
 	///

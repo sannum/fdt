@@ -1,19 +1,14 @@
 use core::str;
-use memchr::memchr;
-use byteorder::{ByteOrder, BigEndian};
 use property::{Property, Properties, PropertyIterator};
 
-use blob::Blob;
-use blob::align;
+use blob::{StructReader, Token};
 
 use core::fmt;
 
 pub struct Node<'buf> {
-	blob: &'buf Blob<'buf>,
-	//offs: usize,
 	name: &'buf str,
-	props: usize,
-	end: usize,
+	props: StructReader<'buf>,
+	subnodes: StructReader<'buf>,
 	depth: usize,
 }
 
@@ -48,7 +43,7 @@ impl<'buf> Node<'buf> {
 	///
 	/// todo: iterate over the first two properties of a node
 	pub fn properties(&self) -> Properties<'buf> {
-		Properties::new(self.blob, self.props)
+		Properties::new(self.props.clone())
 	}
 	
 	/// Returns the depth of a node in the tree.
@@ -192,26 +187,20 @@ impl<'buf> fmt::Display for Node<'buf> {
 
 #[derive(Clone, Debug)]
 pub struct Nodes<'buf> {
-	blob: &'buf Blob<'buf>,
-	offs: usize,
+	blob: StructReader<'buf>,
 	depth: usize,
 }
 
 impl<'buf> Nodes<'buf> {
-	pub fn from_blob(blob: &'buf Blob<'buf>) -> Nodes<'buf> {
+	pub fn new(blob: StructReader<'buf>, initial_depth: usize) -> Nodes<'buf> {
 		Nodes {
 			blob: blob,
-			offs: 0,
-			depth: 0,
+			depth: initial_depth,
 		}
 	}
 	
 	fn after_node(node: &'buf Node<'buf>) -> Nodes<'buf> {
-		Nodes {
-			blob: node.blob,
-			offs: node.end,
-			depth: node.depth + 1,
-		}
+		Nodes::new(node.subnodes.clone(), node.depth + 1)
 	}
 }
 
@@ -219,66 +208,23 @@ impl<'buf> Iterator for Nodes<'buf> {
 	type Item = Node<'buf>;
 	
 	fn next(&mut self) -> Option<Self::Item> {
-		//let s = self.offs;
-		let d = self.blob.nodes();
-		let mut o = self.offs;
-		let name;
 		loop {
-			match BigEndian::read_u32(&d[o..]) {
-				::FDT_NOP => {
-					o += 4;
-				},
-				::FDT_BEGIN_NODE => {
-					o += 4;
-					// Todo: merge the two following statements into a parse_cstr_like function
-					let len = memchr(b'\0', &d[o..]).unwrap();
-					name = str::from_utf8(&d[o..o + len]).unwrap();
-					o = align(o + len + 1, 4);
+			match self.blob.token() {
+				Token::BeginNode => {
+					let d = self.depth;
 					self.depth += 1;
-					break;
+					return Some(Node {
+						name: &self.blob.string(),
+						props: self.blob.align(4).clone(),
+						subnodes: self.blob.skip_props().clone(),
+						depth: d,
+					});
 				},
-				::FDT_END_NODE => {
-					o += 4;
-					if self.depth == 0 {
-						panic!("Parse error, unexpected FDT_END_NODE token at offs {}", o);
-						//return None
-					} else {
-						self.depth -= 1;
-					}
-				},
-				::FDT_END => {
-					if self.depth == 0 {
-						return None
-					} else {
-						panic!("Parse error, unexpected FDT_END token at offs {}", o);
-					}
-				},
-				e => panic!("Parse error, expected FDT_NOP or FDT_BEGIN_NODE, found {:#010x} at offs {}", e, o),
+				Token::EndNode if self.depth >= 1 => self.depth -= 1,
+				Token::End if self.depth == 0 => return None,
+				e => panic!("Parse error, unexpected {} at offs {}", e, self.blob.offs()),
 			}
 		}
-		let props = o;
-		loop {
-			match BigEndian::read_u32(&d[o..]) {
-				::FDT_NOP => {
-					o += 4;
-				},
-				::FDT_PROP => {
-					o += 4;
-					let mut len = BigEndian::read_u32(&d[o..]) as usize;
-					o = align(o + 8 + len, 4);
-				},
-				_ => break,
-			}
-		}
-		self.offs = o;
-		Some(Node {
-			blob: &self.blob,
-			//offs: s,
-			name: name,
-			props: props,
-			end: o,
-			depth: self.depth - 1,
-		})
 	}
 }
 
@@ -356,6 +302,48 @@ impl<'str, 'buf, I: Iterator<Item=Node<'buf>>> Iterator for
 	}
 }
 
+#[derive(Clone, Debug)]
+pub struct WithProperty<'name, I> {
+	iter: I,
+	name: &'name str,
+}
+
+impl<'name, 'buf, I: Iterator<Item=Node<'buf>>> Iterator for
+		WithProperty<'name, I>
+{
+	type Item = I::Item;
+	
+	fn next(&mut self) -> Option<Self::Item> {
+		let name = self.name;
+		self.iter.find(|node| node.property(name).is_some())
+	}
+}
+
+impl<'name, 'val, I> WithProperty<'name, I> {
+	pub fn with_value(self, value: &'val [u8]) -> WithPropertyValue<'name, 'val, I> {
+		WithPropertyValue { iter: self.iter, name: self.name, val: value }
+	}
+}
+
+#[derive(Clone, Debug)]
+pub struct WithPropertyValue<'name, 'val, I> {
+	iter: I,
+	name: &'name str,
+	val: &'val [u8],
+}
+
+impl<'name, 'val, 'buf, I: Iterator<Item=Node<'buf>>> Iterator for
+		WithPropertyValue<'name, 'val, I>
+{
+	type Item = I::Item;
+	
+	fn next(&mut self) -> Option<Self::Item> {
+		let name = self.name;
+		let val = self.val;
+		self.iter.find(|node| node.property(name).map_or(false, |prop| prop.raw() == val))
+	}
+}
+
 pub trait NodeIterator<'arg, 'buf>: Iterator<Item=Node<'buf>> {
 	/// Filters on nodes with name [name]
 	///
@@ -383,7 +371,7 @@ pub trait NodeIterator<'arg, 'buf>: Iterator<Item=Node<'buf>> {
 	/// todo: get all nodes compatible with a string.
 	fn compatible_with(self, compatible: &'arg str) -> CompatibleWith<'arg, Self> 
 			where Self: Sized {
-		CompatibleWith { iter: self, comp: compatible}
+		CompatibleWith { iter: self, comp: compatible }
 	}
 	
 	/// Filters on nodes based on [property].
@@ -395,7 +383,10 @@ pub trait NodeIterator<'arg, 'buf>: Iterator<Item=Node<'buf>> {
 	/// # Examples
 	///
 	/// todo: get some nodes using properties..
-	fn with_property(self, property: &'arg Property) where Self: Sized {}
+	fn with_property(self, property: &'arg str) -> WithProperty<'arg, Self>
+			where Self: Sized {
+		WithProperty { iter: self, name: property }
+	}
 	
 	/// Returns the node with [phandle] if it is iterated by this iterator.
 	///
@@ -406,66 +397,8 @@ pub trait NodeIterator<'arg, 'buf>: Iterator<Item=Node<'buf>> {
 	///
 	/// todo: get a node using its phandle.
 	fn with_phandle(self, phandle: u32) -> Option<Node<'buf>> where Self: Sized {
-		None
+		None//(WithProperty { iter: self, name: "phandle" }).with_value(phandle)
 	}
-
 }
 
 impl<'name, 'buf, I> NodeIterator<'name, 'buf> for I where I: Iterator<Item=Node<'buf>> {}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-impl<'buf> fmt::Display for Subnodes<'buf> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		fn fmt_node(node: &Node, f: &mut fmt::Formatter, i: usize) -> 
-				Result<(), fmt::Error> 
-		{
-			writeln!(f, "{:i$}{} {{", "  ", node.name(), i = i)?;
-			for prop in node.properties() {
-				write!(f, "{:i$}", "    ", i = i + 1)?;
-				// Some special nodes have properties of special types
-				match node.name() { 
-					"aliases" | "__symbols__" => writeln!(f, 
-						"{}: {}", prop.name(), prop.as_str()
-					)?,
-					"__overrides__" => {
-						let phandle = BigEndian::read_u32(prop.raw());
-						let strlen = memchr(b'\0', &prop.raw()[4..]).unwrap();
-						let string = str::from_utf8(&prop.raw()[4..4 + strlen]).unwrap();
-						let rem = prop.raw().len() - (4 + strlen);
-						writeln!(f, "{}: [{}] {:?} {}", prop.name(), phandle, string, rem)?
-					},
-					_ => writeln!(f, "{}", prop)?,
-				};
-			}
-			Ok(())
-		};
-	
-		let min_depth = self.min_depth;
-		let mut depth = min_depth;
-		let nodes = self.clone();
-		for node in nodes {
-			fmt_node(&node, f, node.depth - min_depth)?;
-			depth += 1;
-			if node.depth - min_depth <= depth {
-				depth -= 1;
-				writeln!(f, "{:i$}}}", "  ", i = depth)?;
-			}
-		}
-		writeln!(f, "}}")
-	}
-}
