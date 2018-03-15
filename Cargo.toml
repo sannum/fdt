@@ -1,7 +1,9 @@
 [package]
 name = "fdt"
-version = "0.1.0"
+version = "0.0.1"
+license = "MIT/Apache-2.0"
 authors = ["Viktor Sannum <sannum.viktor@gmail.com>"]
+description = "Flat device tree parsing"
 
 [dependencies]
 byteorder = { version = "1", default-features = false }

@@ -73,15 +73,6 @@ impl<'buf> FDT<'buf> {
 		Ok(FDT { blob: Blob::from_raw(ptr)? })
 	}
 
-	/// Returns the version of the flat device tree.
-	///
-	/// # Examples
-	///
-	/// todo: 
-	//fn version(&self) -> u32 {
-	//	self.blob.header().version().into_u32()
-	//}
-	
 	/// Returns the physical cpuid of the booting cpu. 
 	/// 
 	/// If the cpuid isn't available (device tree is of a version < 2) None is returned;
