@@ -52,8 +52,9 @@ impl<'buf> Blob<'buf> {
 	
 	/// Retrieve the offset to the memory reserve map
 	
-	pub fn rsvmap(&self) -> &'buf [u8] {
-		&self.raw[0..]
+	pub fn rsvmap(&self) -> RsvMapReader<'buf> {
+		let o = self.header().off_mem_rsvmap() as usize;
+		RsvMapReader { d: &self.raw[o..], o: 0 }
 	}
 }
 
@@ -178,13 +179,14 @@ impl<'blob> StructReader<'blob> {
 	}
 }
 
+#[derive(Copy, Clone)]
 pub struct RsvMapReader<'blob> {
 	d: &'blob [u8],
 	o: usize,
 }
 
 impl<'blob> RsvMapReader<'blob> {
-	pub fn read_u64(&mut self) -> {
+	pub fn read_u64(&mut self) -> u64 {
 		let o = self.o;
 		self.o += 8;
 		BE::read_u64(&self.d[o..])

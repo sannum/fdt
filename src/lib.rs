@@ -18,16 +18,18 @@ pub mod filters;
 pub use node::NodeIterator;
 
 mod header;
+mod memory_reserve_map;
 mod blob;
 pub mod property;
 mod node;
 mod stringlist;
 
 pub use property::PropertyValue;
+use memory_reserve_map::MemoryReserveMap;
 use property::Property;
 
 use blob::Blob;
-use node::{Node, Nodes, Subnodes};
+use node::{Node, Subnodes};
 
 /// An interface for parsing flat device trees from an in memory buffer.
 ///
@@ -130,10 +132,30 @@ impl<'buf> FDT<'buf> {
 	/// Returns the reserved memory map of the device tree.
 	///
 	/// The reserved memory map contains a list of physical memory areas which 
-	/// are reserved and should not be allocated for other uses
-	//fn memory_reserve_map(&self) -> MemoryReserveMap<'buf>{
-	//	self.blob.memory_reserve_map()
-	//}
+	/// are reserved and should not be allocated for other uses.
+	///
+	/// The memory reserved map implements Iterator, so all entries can be
+	/// accessed using common iterator methods.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use fdt::FDT;
+	/// let dtb = include_bytes!("../tests/dt.dtb").as_ptr();
+	/// 
+	/// let fdt;
+	/// unsafe { fdt = FDT::from_raw(dtb).unwrap(); }
+	/// 
+	/// // List all the reserved memory entries in this .dtb (in this case there is only
+	/// // one at address 0 with size 4096)
+	/// for entry in fdt.memory_reserve_map() {
+	///     assert_eq!(entry.address, 0);
+	///	    assert_eq!(entry.size, 0x1000);
+	/// }
+	/// ```
+	pub fn memory_reserve_map(&self) -> MemoryReserveMap<'buf>{
+		MemoryReserveMap::new(self.blob.rsvmap())
+	}
 	
 	/// Returns a [NodeIterator] over the nodes of the flat device tree.
 	///
