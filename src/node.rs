@@ -1,9 +1,10 @@
 use core::str;
-use property::{Property, Properties, PropertyIterator};
+use property::{Property, Properties, PropertyIterator, PropertyValue, IsValue};
 
 use blob::{StructReader, Token};
 
 use core::fmt;
+use core::cmp::Ordering;
 
 pub struct Node<'buf> {
 	name: &'buf str,
@@ -66,7 +67,6 @@ impl<'buf> Node<'buf> {
 	pub fn subnodes(&'buf self) -> Subnodes<'buf> {
 		Subnodes::from_node(self)
 	}
-
 	
 	/// Returns a [NodeIterator] of all supernodes (parents of the node).
 	///
@@ -87,7 +87,7 @@ impl<'buf> Node<'buf> {
 	/// # Examples
 	///
 	/// todo: get a property from a node
-	pub fn property(&self, name: &str) -> Option<Property> {
+	pub fn property(&self, name: &str) -> Option<Property<'buf>> {
 		self.properties().with_name(name).next()
 	}
 	/// Returns the phandle of the node.
@@ -185,6 +185,12 @@ impl<'buf> fmt::Display for Node<'buf> {
 	}
 }
 
+impl<'buf> fmt::Debug for Node<'buf> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		write!(f, "{}", self.name())
+	}
+}
+
 #[derive(Clone, Debug)]
 pub struct Nodes<'buf> {
 	blob: StructReader<'buf>,
@@ -234,11 +240,27 @@ pub struct Subnodes<'buf> {
 	min_depth: usize,
 }
 
-impl<'buf> Subnodes<'buf> {
+impl<'buf, 'path> Subnodes<'buf> {
 	fn from_node(node: &'buf Node<'buf>) -> Self {
 		Self {
 			iter: Nodes::after_node(node),
-			min_depth: node.depth,
+			min_depth: node.depth + 1,
+		}
+	}
+	
+	pub fn new(blob: StructReader<'buf>, depth: usize) -> Self {
+		Self {
+			iter: Nodes::new(blob, depth),
+			min_depth: depth,
+		}
+	}
+	
+	pub fn with_path(self, path: &'path str) -> WithPath<'buf, 'path> {
+		let depth = self.min_depth;
+		WithPath {
+			iter: self,
+			path: path,
+			depth: depth,
 		}
 	}
 }
@@ -248,7 +270,7 @@ impl<'buf> Iterator for Subnodes<'buf> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		if let Some(n) = self.iter.next() {
-			if n.depth > self.min_depth {
+			if n.depth >= self.min_depth {
 				return Some(n)
 			}
 		}
@@ -286,6 +308,91 @@ impl<'name, 'buf, I: Iterator<Item=Node<'buf>>> Iterator for
 }
 
 #[derive(Clone, Debug)]
+pub struct WithPath<'buf, 'path> {
+	iter: Subnodes<'buf>,
+	path: &'path str,
+	depth: usize,
+}
+
+impl<'buf, 'path> Iterator for WithPath<'buf, 'path>
+{
+	type Item = Node<'buf>;
+	
+	fn next(&mut self) -> Option<Self::Item> {
+		let mut curr = self.path.split('/').nth(self.depth).unwrap();
+		let iter = &mut self.iter;
+		let depth = &mut self.depth;
+		let path = &self.path;
+		iter.find(|node| {
+			match node.depth().cmp(depth) {
+				Ordering::Equal => {
+					if node.has_name(curr) || curr == "*" {
+						match path.split('/').nth(*depth + 1) {
+							Some(name) => {
+								*depth += 1;
+								curr = name;
+								false
+							},
+							None => true
+						}
+					} else {
+						false
+					}/*
+					Some(name) => {
+						if node.has_name(name) || name == "*" {
+							*depth += 1;
+							curr = path.split('/').nth(*depth)
+						}
+						false
+					},
+					None => true,*/
+				},
+				Ordering::Less => {
+					*depth = node.depth();
+					curr = path.split('/').nth(*depth).unwrap();
+					false
+				},
+				Ordering::Greater => false
+			}
+		})
+			
+			/*
+			if node.depth() == self.depth {
+				match curr {
+					Some(name) => {
+						if node.has_name(name) || name == "*" {
+							self.depth += 1;
+							curr = self.path.split('/').nth(self.depth)
+						}
+						return false;
+					},
+					None => return true,
+				}
+			} else if node.depth() < self.depth {
+				self.depth = node.depth();
+				curr = self.path.split('/').nth(self.depth);
+				return false;
+			}
+		})*/
+		/*for node in self.iter {
+			if node.depth() == self.depth {
+				match curr {
+					Some(name) => if node.has_name(name) || name == "*" {
+						self.depth += 1;
+						curr = self.path.split('/').nth(self.depth)
+					},
+					None => return Some(node)
+				}
+			} else if node.depth() < self.depth {
+				self.depth = node.depth();
+				curr = self.path.split('/').nth(self.depth)
+			}
+		}
+		None*/
+	}
+}
+
+#[derive(Clone, Debug)]
 pub struct CompatibleWith<'str, I> {
 	iter: I,
 	comp: &'str str,
@@ -319,28 +426,28 @@ impl<'name, 'buf, I: Iterator<Item=Node<'buf>>> Iterator for
 	}
 }
 
-impl<'name, 'val, I> WithProperty<'name, I> {
-	pub fn with_value(self, value: &'val [u8]) -> WithPropertyValue<'name, 'val, I> {
+impl<'name, I> WithProperty<'name, I> {
+	pub fn with_value<V>(self, value: V) -> WithPropertyValue<'name, I, V> {
 		WithPropertyValue { iter: self.iter, name: self.name, val: value }
 	}
 }
 
-#[derive(Clone, Debug)]
-pub struct WithPropertyValue<'name, 'val, I> {
+#[derive(Clone)]
+pub struct WithPropertyValue<'prop, I, V> {
 	iter: I,
-	name: &'name str,
-	val: &'val [u8],
+	name: &'prop str,
+	val: V,
 }
 
-impl<'name, 'val, 'buf, I: Iterator<Item=Node<'buf>>> Iterator for
-		WithPropertyValue<'name, 'val, I>
+impl<'buf, I: Iterator<Item=Node<'buf>>, V: IsValue + Copy> Iterator for
+		WithPropertyValue<'buf, I, V>
 {
 	type Item = I::Item;
 	
 	fn next(&mut self) -> Option<Self::Item> {
 		let name = self.name;
 		let val = self.val;
-		self.iter.find(|node| node.property(name).map_or(false, |prop| prop.raw() == val))
+		self.iter.find(|node| node.property(name).map_or(false, |prop| prop.is_equal(val)))
 	}
 }
 
@@ -397,7 +504,7 @@ pub trait NodeIterator<'arg, 'buf>: Iterator<Item=Node<'buf>> {
 	///
 	/// todo: get a node using its phandle.
 	fn with_phandle(self, phandle: u32) -> Option<Node<'buf>> where Self: Sized {
-		None//(WithProperty { iter: self, name: "phandle" }).with_value(phandle)
+		(WithProperty { iter: self, name: "phandle" }).with_value(phandle).nth(0)
 	}
 }
 

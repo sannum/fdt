@@ -78,11 +78,17 @@ impl fmt::Display for Token {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StructReader<'blob> {
 	d: &'blob [u8],
 	s: &'blob [u8],
 	o: usize,
+}
+
+impl<'blob> fmt::Debug for StructReader<'blob> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "StructReader{{ offs: {} }}", self.o)
+	}
 }
 
 impl<'blob> StructReader<'blob> {
@@ -158,17 +164,29 @@ impl<'blob> StructReader<'blob> {
 		self
 	}
 	
-	pub fn slice(&mut self) -> &'blob [u8] {
-		let d = &self.d[self.o ..];
-		let end = BE::read_u32(d) as usize + 4;
-		self.o += end;
-		&d[4 .. end]
+	pub fn slice(&mut self, len: usize) -> &'blob [u8] {
+		let d = &self.d[self.o..];
+		self.o += len;
+		&d[.. len]
 	}
 	
 	pub fn string_ref(&mut self) -> &'blob str {
-		let o = BE::read_u32(self.d) as usize;
+		let o = self.read_u32() as usize ;
 		let d = &self.s[o..];
 		let len = memchr(b'\0', d).unwrap_or(d.len());
-		str::from_utf8(&d[..len]).unwrap()
+		str::from_utf8(&d[0..len]).unwrap()
+	}
+}
+
+pub struct RsvMapReader<'blob> {
+	d: &'blob [u8],
+	o: usize,
+}
+
+impl<'blob> RsvMapReader<'blob> {
+	pub fn read_u64(&mut self) -> {
+		let o = self.o;
+		self.o += 8;
+		BE::read_u64(&self.d[o..])
 	}
 }

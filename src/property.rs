@@ -39,6 +39,44 @@ impl<'a> Property<'a> {
 	pub fn as_stringlist(&self) -> StringList<'a> {
 		StringList::from_utf8(self.value).unwrap()
 	}
+	
+	pub fn parse<I: PropertyValue<'a>>(&self) -> Result<I, &str> {
+		I::from_raw(self.value)
+	}
+	
+	pub fn is_equal<I: IsValue>(&self, other: I) -> bool {
+		other.is_value(self.value)
+	}
+}
+
+pub trait PropertyValue<'a> {
+	fn from_raw(raw: &'a [u8]) -> Result<Self, &'static str> where Self: Sized;
+}
+
+impl<'a> PropertyValue<'a> for u32 {
+	fn from_raw(raw: &'a [u8]) -> Result<Self, &'static str> {
+		if raw.len() < 4 {
+			Err("Value to small Error")
+		} else {
+			Ok(BE::read_u32(raw))
+		}
+	}
+}
+
+impl<'a> PropertyValue<'a> for &'a str {
+	fn from_raw(raw: &'a [u8]) -> Result<&'a str, &'static str> {
+		str::from_utf8(raw).map_err(|e| "Utf8 Error")
+	}
+}
+
+pub trait IsValue {
+	fn is_value(&self, raw: &[u8]) -> bool;
+}
+
+impl IsValue for u32 {
+	fn is_value(&self, raw: &[u8]) -> bool {
+		*self == BE::read_u32(raw) 
+	}
 }
 
 pub struct Properties<'buf> {
@@ -56,10 +94,13 @@ impl<'buf> Iterator for Properties<'buf> {
 	
 	fn next(&mut self) -> Option<Self::Item> {
 		match self.blob.token() {
-			Token::Prop => Some(Property {
-				name: self.blob.string_ref(),
-				value: self.blob.slice(),
-			}),
+			Token::Prop => {
+				let len = self.blob.read_u32() as usize;
+				Some(Property {
+					name: self.blob.string_ref(),
+					value: self.blob.slice(len),
+				})
+			},
 			_ => None,
 		}
 	}
@@ -107,7 +148,7 @@ impl<'a> fmt::Display for Property<'a> {
 		write!(f, "{}: ", self.name())?;
 		match self.name() {
 			"compatible" 	=> write!(f, "{}", self.as_stringlist()), //todo: stringlist
-			"model" 		=> write!(f, "{}", self.as_str()),
+			"model" 		=> write!(f, "{}", self.parse::<&str>().unwrap()),
 			"phandle" 		=> write!(f, "{}", self.as_u32().unwrap()),
 			"status" 		=> write!(f, "{}", self.as_str()),
 			"#address-cells" => write!(f, "{}", self.as_u32().unwrap()),

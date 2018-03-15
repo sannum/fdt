@@ -23,8 +23,11 @@ pub mod property;
 mod node;
 mod stringlist;
 
+pub use property::PropertyValue;
+use property::Property;
+
 use blob::Blob;
-use node::{Node, Nodes};
+use node::{Node, Nodes, Subnodes};
 
 /// An interface for parsing flat device trees from an in memory buffer.
 ///
@@ -132,7 +135,7 @@ impl<'buf> FDT<'buf> {
 	//	self.blob.memory_reserve_map()
 	//}
 	
-	/// Returns a [NodeIterator] of the nodes of the flat device tree.
+	/// Returns a [NodeIterator] over the nodes of the flat device tree.
 	///
 	/// The nodes are iterated over in a depth first order.
 	///
@@ -150,8 +153,8 @@ impl<'buf> FDT<'buf> {
 	///     println!("{}", node.name());
 	/// }
 	/// ```
-	pub fn nodes(&'buf self) -> Nodes<'buf> {
-		Nodes::new(self.blob.nodes(), 0)
+	pub fn nodes(&'buf self) -> Subnodes<'buf> {
+		Subnodes::new(self.blob.nodes(), 0)
 	}
 	
 // Utility methods
@@ -163,28 +166,42 @@ impl<'buf> FDT<'buf> {
 	///
 	/// # Examples
 	///
-	/// todo: Find a interrupt parent based on phandle
-	fn phandle(&'buf self, phandle: u32) -> Option<Node<'buf>> {
+	/// ```
+	/// use fdt::{FDT, NodeIterator, PropertyValue};
+	/// let dtb = include_bytes!("../tests/dt.dtb").as_ptr();
+	/// 
+	/// let fdt;
+	/// unsafe { fdt = FDT::from_raw(dtb).unwrap(); }
+	/// 
+	/// // Fetch "cpus" node via it's phandle (in this particular .dtb 67)
+	/// println!("{}", fdt.phandle(67).unwrap().name()); // prints "cpus"
+	/// ```
+	pub fn phandle(&'buf self, phandle: u32) -> Option<Node<'buf>> {
 		self.nodes().with_phandle(phandle)
 	}
-	
-	/// Takes an alias and returns the corresponding device [Node]
-	///
-	/// Returns a [None] if the alias doesn't exist in the flat device tree.
-	///
-	/// # Examples
-	///
-	/// todo: Find an aliased node
-	//fn node_with_alias(&self, alias: &str) -> Option<Node<'buf>>{}
-	
+		
 	/// Takes an alias and returns the corresponding device path
 	///
 	/// Returns a [None] if the alias doesn't exist in the flat device tree.
 	///
 	/// # Examples
+	///	
+	/// ```
+	/// use fdt::{FDT, NodeIterator, PropertyValue};
+	/// let dtb = include_bytes!("../tests/dt.dtb").as_ptr();
+	/// 
+	/// let fdt;
+	/// unsafe { fdt = FDT::from_raw(dtb).unwrap(); }
+	/// 
+	/// assert_eq!(fdt.alias("audio"), Some("/soc/audio"));
 	///
-	/// todo: Find an aliased node path
-	pub fn path_from_alias(&self, alias: &str) -> Option<&'buf str> {
-		None
+	/// let audio = fdt.nodes().with_path(fdt.alias("audio").unwrap()).next().unwrap();
+	/// assert_eq!(audio.property("compatible").unwrap().parse::<&str>().unwrap(), "brcm,bcm2835-audio\u{0}"); 
+	/// ```
+	pub fn alias(&'buf self, alias: &str) -> Option<&'buf str> {
+		self.nodes().with_path("/aliases").nth(0).and_then(
+		|aliases| aliases.property(alias)).and_then(
+		|property| property.parse::<&str>().ok()).and_then(
+		|string| string.split('\0').nth(0)) // aliases may have trailing null characters
 	}
 }
