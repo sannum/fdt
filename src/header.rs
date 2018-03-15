@@ -1,5 +1,5 @@
-use ::MIN_COMPAT_VERSION;
-use ::MAX_COMPAT_VERSION;
+use blob::MIN_COMPAT_VERSION;
+use blob::MAX_COMPAT_VERSION;
 
 use byteorder::{ByteOrder, BE};
 

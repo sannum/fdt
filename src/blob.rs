@@ -11,6 +11,15 @@
 use header::Header;
 use header::HEADER_V1_SIZE;
 
+pub const MIN_COMPAT_VERSION: u32 = 1;
+pub const MAX_COMPAT_VERSION: u32 = 17;
+
+const FDT_BEGIN_NODE: u32	= 0x00000001;
+const FDT_END_NODE: u32	 	= 0x00000002;
+const FDT_PROP: u32			= 0x00000003;
+const FDT_NOP: u32			= 0x00000004;
+const FDT_END: u32			= 0x00000009;
+
 use core::slice;
 
 use memchr::memchr;
@@ -100,22 +109,22 @@ impl<'blob> StructReader<'blob> {
 	pub fn token(&mut self) -> Token {
 		loop {
 			match BE::read_u32(&self.d[self.o..]) {
-				::FDT_NOP => {
+				FDT_NOP => {
 					self.o += 4;
 				},
-				::FDT_BEGIN_NODE => {
+				FDT_BEGIN_NODE => {
 					self.o += 4;
 					return Token::BeginNode;
 				},
-				::FDT_END_NODE => {
+				FDT_END_NODE => {
 					self.o += 4;
 					return Token::EndNode;
 				},
-				::FDT_PROP => {
+				FDT_PROP => {
 					self.o += 4;
 					return Token::Prop;
 				}
-				::FDT_END => {
+				FDT_END => {
 					self.o += 4;
 					return Token::End;
 				},

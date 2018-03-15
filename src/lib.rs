@@ -3,28 +3,18 @@
 extern crate byteorder;
 extern crate memchr;
 
-const MIN_COMPAT_VERSION: u32 = 1;
-const MAX_COMPAT_VERSION: u32 = 17;
-
-const FDT_BEGIN_NODE: u32	= 0x00000001;
-const FDT_END_NODE: u32	 	= 0x00000002;
-const FDT_PROP: u32			= 0x00000003;
-const FDT_NOP: u32			= 0x00000004;
-const FDT_END: u32			= 0x00000009;
-
 //pub mod error;
-pub mod filters;
-//pub use filters::*;
 pub use node::NodeIterator;
+pub use property::PropertyIterator;
 
 mod header;
 mod memory_reserve_map;
 mod blob;
-pub mod property;
+mod property;
 mod node;
 mod stringlist;
 
-pub use property::PropertyValue;
+pub use property::{PropertyValue, IsValue};
 use memory_reserve_map::MemoryReserveMap;
 use property::Property;
 
